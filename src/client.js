@@ -248,7 +248,10 @@ export class WindsurfClient {
       } else {
         const maxHistoryBytes = cascadeHistoryBudget(modelUid);
         const lines = [];
-        let historyBytes = 0;
+        // Seed the byte count with the system prompt — it gets prepended to
+        // the final text, so if we don't reserve its length here a large
+        // sysText can push the whole prompt past the model's context window.
+        let historyBytes = sysText ? sysText.length : 0;
         for (let i = convo.length - 2; i >= 0; i--) {
           const m = convo[i];
           const tag = m.role === 'user' ? 'human' : 'assistant';
@@ -387,11 +390,16 @@ export class WindsurfClient {
         }
 
         // Cold stall: 30s+ ACTIVE but never saw any text or tool call.
+        // Budget the threshold against the FINAL constructed prompt (which
+        // includes prepended history + sysText) rather than the raw message
+        // list — long multi-turn conversations with a small newest message
+        // were hitting the short-prompt cold-stall ceiling prematurely.
         const elapsed = Date.now() - startTime;
-        const effectiveChars = inputChars + (toolPreamble?.length ?? 0);
+        const promptChars = typeof text === 'string' ? text.length : inputChars;
+        const effectiveChars = promptChars + (toolPreamble?.length ?? 0);
         const coldStallMs = Math.min(maxWait, 30_000 + Math.floor(effectiveChars / 1500) * 5_000);
         if (elapsed > coldStallMs && sawActive && !sawText && seenToolCallIds.size === 0) {
-          log.warn(`Cascade cold stall: ${elapsed}ms active without any text or tool call (threshold=${coldStallMs}ms, inputChars=${inputChars}), bailing`);
+          log.warn(`Cascade cold stall: ${elapsed}ms active without any text or tool call (threshold=${coldStallMs}ms, promptChars=${promptChars}), bailing`);
           endReason = 'stall_cold';
           const err = new Error(`Cascade planner stalled — no output after ${Math.round(coldStallMs / 1000)}s`);
           err.isModelError = true;
