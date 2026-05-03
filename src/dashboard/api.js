@@ -368,8 +368,21 @@ export async function handleDashboardApi(method, subpath, body, req, res) {
       // Schedule process exit so PM2 auto-restarts us. This is far simpler
       // and port/env-agnostic compared to spawning update.sh (which hardcodes
       // PORT=3003 default). Requires PM2 autorestart: true (the default).
+      //
+      // v2.0.85 (#127 123cek): graceful-stop the LS pool before exit so
+      // SIGKILL from PM2 doesn't leave orphan language_server_linux_x64
+      // processes holding ports. Startup-time cleanup also runs as a
+      // backstop, but stopping cleanly here means the next process won't
+      // even need cleanup most of the time.
       if (changed) {
-        setTimeout(() => {
+        setTimeout(async () => {
+          log.info('self-update: stopping LS pool before exit');
+          try {
+            const m = await import('../langserver.js');
+            m.stopLanguageServer();
+          } catch (e) {
+            log.warn(`self-update: stopLanguageServer failed: ${e.message}`);
+          }
           log.info('self-update: exiting for PM2 auto-restart');
           process.exit(0);
         }, 800);

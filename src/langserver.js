@@ -8,7 +8,7 @@
  * canceled.
  */
 
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import { mkdirSync } from 'fs';
 import { existsSync } from 'fs';
 import http2 from 'http2';
@@ -493,6 +493,68 @@ export async function startLanguageServer(opts = {}) {
   _apiServerUrl = opts.apiServerUrl || process.env.CODEIUM_API_URL || _apiServerUrl;
   const def = await ensureLs(null);
   return { port: def.port, csrfToken: def.csrfToken };
+}
+
+/**
+ * v2.0.85 (#127 123cek): scan host process table for orphan
+ * `language_server_linux_x64` instances left over from previous runs
+ * (e.g. self-update via `process.exit(0)` skipped the SIGTERM hook,
+ * or PM2 SIGKILL killed us before stopLanguageServer could run) and
+ * kill them. Keeps long-running PM2 deployments from accumulating
+ * dead LS processes that hold their pool ports.
+ *
+ * Limited to processes whose argv[0] matches our `_binaryPath` (or
+ * the legacy DEFAULT_BINARY) so unrelated `language_server_linux_x64`
+ * binaries on the same host (rare) are not touched. No-op on Windows
+ * since the LS binary is Linux-only there.
+ *
+ * Skips itself: PIDs we currently track in `_pool` (none yet at
+ * startup, but called also from /self-update before exit).
+ *
+ * Best-effort: any error is logged but doesn't block startup.
+ */
+export function cleanupOrphanLanguageServers() {
+  if (process.platform === 'win32') return { scanned: 0, killed: 0 };
+  let scanned = 0;
+  let killed = 0;
+  const ourPids = new Set();
+  for (const entry of _pool.values()) {
+    if (entry?.process?.pid) ourPids.add(entry.process.pid);
+  }
+  const targetBinaries = new Set([_binaryPath, DEFAULT_BINARY]);
+  try {
+    // -e: every process; -o pid,args: pid + full argv (so we can match
+    // the binary path). Cap output at a few hundred lines via head; LS
+    // pids are typically small clusters, not thousands.
+    const out = execSync('ps -e -o pid=,args=', { timeout: 3000, encoding: 'utf-8' });
+    for (const line of out.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const m = trimmed.match(/^(\d+)\s+(.*)$/);
+      if (!m) continue;
+      const pid = parseInt(m[1], 10);
+      const argv = m[2];
+      // Match either the configured binary path OR the default path.
+      let isOurs = false;
+      for (const bin of targetBinaries) {
+        if (bin && argv.includes(bin)) { isOurs = true; break; }
+      }
+      if (!isOurs) continue;
+      scanned++;
+      if (ourPids.has(pid)) continue;
+      if (pid === process.pid) continue;
+      try {
+        process.kill(pid, 'SIGTERM');
+        killed++;
+        log.info(`Killed orphan LS pid=${pid} (${argv.slice(0, 80)}...)`);
+      } catch (e) {
+        if (e.code !== 'ESRCH') log.warn(`Could not kill orphan LS pid=${pid}: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    log.warn(`cleanupOrphanLanguageServers: ${e.message}`);
+  }
+  return { scanned, killed };
 }
 
 export function stopLanguageServer() {

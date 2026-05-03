@@ -1186,7 +1186,66 @@ export function mergeReasoningEffortIntoModel(reqModel, body) {
   return reqModel;
 }
 
+/**
+ * v2.0.85 (#126 KLFDan0534 + #128 wnfilm) — server-side auto-fallback
+ * on rate_limit_exceeded.
+ *
+ * Default ON. When the inner handler returns 429 with a `fallback_model`
+ * field (set by chat.js + stream.js when the whole pool is rate-limited
+ * on a high-effort variant like `claude-opus-4-7-max`), the wrapper
+ * silently retries the request against the suggested lower-effort
+ * variant. The caller sees a successful response under the original
+ * model name (we restore it post-flight) so existing client code is
+ * unaffected.
+ *
+ * Stream requests are NOT auto-retried — by the time the inner
+ * handler decides to error, no chunks have been written yet but the
+ * caller flow is harder to rewind. Stream callers see the 429 with
+ * the same `fallback_model` hint and can retry client-side.
+ *
+ * Disable via `WINDSURFAPI_VARIANT_FALLBACK_ON_RATE_LIMIT=0`.
+ */
+export function shouldAutoFallback(body, context, result) {
+  if (body?.stream) return false;
+  if (context?.__fallbackAttempt) return false;
+  if (process.env.WINDSURFAPI_VARIANT_FALLBACK_ON_RATE_LIMIT === '0') return false;
+  const err = result?.body?.error;
+  if (!err) return false;
+  if (err.type !== 'rate_limit_exceeded') return false;
+  if (!err.fallback_model || typeof err.fallback_model !== 'string') return false;
+  return true;
+}
+
 export async function handleChatCompletions(body, context = {}) {
+  const result = await _handleChatCompletionsInner(body, context);
+  if (shouldAutoFallback(body, context, result)) {
+    const originalModel = body.model;
+    const fallbackModel = result.body.error.fallback_model;
+    log.info(`auto-fallback: ${originalModel} → ${fallbackModel} (whole pool rate_limited)`);
+    const fallbackResult = await _handleChatCompletionsInner(
+      { ...body, model: fallbackModel },
+      { ...context, __fallbackAttempt: true },
+    );
+    // Restore original model id in the response body so client code
+    // matching on `response.model === requested model` still works.
+    if (fallbackResult?.body) {
+      if (typeof fallbackResult.body === 'object' && 'model' in fallbackResult.body) {
+        fallbackResult.body.model = originalModel;
+      }
+      // Surface the actual served model in a sibling field for log /
+      // billing purposes (cascade_breakdown style — non-OpenAI but
+      // documented).
+      if (typeof fallbackResult.body === 'object' && !fallbackResult.body.error) {
+        fallbackResult.body.served_model = fallbackModel;
+        fallbackResult.body.fallback_reason = 'rate_limit_auto_fallback';
+      }
+    }
+    return fallbackResult;
+  }
+  return result;
+}
+
+async function _handleChatCompletionsInner(body, context = {}) {
   const reqId = Math.random().toString(36).slice(2, 8);
   // v2.0.67 (#112): feed the quiet-window auto-updater. Cheap (one
   // timestamp push); covers /v1/chat/completions, /v1/messages and

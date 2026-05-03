@@ -1,7 +1,7 @@
 // Logger must be imported first to patch log functions before other modules use them
 import './dashboard/logger.js';
 import { initAuth, isAuthenticated, saveAccountsSync } from './auth.js';
-import { startLanguageServer, waitForReady, isLanguageServerRunning, stopLanguageServer } from './langserver.js';
+import { startLanguageServer, waitForReady, isLanguageServerRunning, stopLanguageServer, cleanupOrphanLanguageServers } from './langserver.js';
 import { startServer } from './server.js';
 import { config, log } from './config.js';
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'fs';
@@ -90,6 +90,19 @@ async function main() {
 
   if (existsSync(binaryPath)) {
     resetWorkspace();
+
+    // v2.0.85 (#127 123cek): kill any leftover language_server_linux_x64
+    // processes from prior runs (PM2 SIGKILL / dashboard self-update via
+    // process.exit() / earlier crash) before we start ours. Otherwise
+    // they keep their LS pool ports occupied and accumulate over self-
+    // update cycles. Setting WINDSURFAPI_SKIP_LS_CLEANUP=1 disables
+    // (e.g. multi-WindsurfAPI on a shared host).
+    if (process.env.WINDSURFAPI_SKIP_LS_CLEANUP !== '1') {
+      try {
+        const r = cleanupOrphanLanguageServers();
+        if (r.killed > 0) log.info(`LS cleanup: scanned ${r.scanned} candidate(s), killed ${r.killed} orphan(s)`);
+      } catch (e) { log.warn(`LS cleanup error (non-fatal): ${e.message}`); }
+    }
 
     await startLanguageServer({
       binaryPath,
