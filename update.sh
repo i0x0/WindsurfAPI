@@ -30,9 +30,17 @@ echo "=== [2/5] Update LS binary ==="
 LS_PATH="${LS_BINARY_PATH:-/opt/windsurf/language_server_linux_x64}"
 if [ -f .env ]; then
   _lp="$(awk '
-    /^LS_BINARY_PATH=/ {
-      sub(/^LS_BINARY_PATH=/, "")
-      print
+    /^[[:space:]]*(export[[:space:]]+)?LS_BINARY_PATH[[:space:]]*=/ {
+      sub(/^[[:space:]]*(export[[:space:]]+)?LS_BINARY_PATH[[:space:]]*=[[:space:]]*/, "")
+      if (substr($0, 1, 1) != "\"" && substr($0, 1, 1) != "'\''") {
+        sub(/[[:space:]]+#.*/, "")
+      }
+      sub(/[[:space:]]*$/, "")
+      if ((substr($0, 1, 1) == "\"" && substr($0, length($0), 1) == "\"") ||
+          (substr($0, 1, 1) == "'\''" && substr($0, length($0), 1) == "'\''")) {
+        $0 = substr($0, 2, length($0) - 2)
+      }
+      print $0
       exit
     }
   ' .env 2>/dev/null || true)"

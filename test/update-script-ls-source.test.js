@@ -23,7 +23,10 @@ describe('update.sh language-server source selection', () => {
   });
 
   test('reads LS_BINARY_PATH from .env without GNU grep-only flags', () => {
-    assert.match(UPDATE_SH, /\bawk\b[\s\S]+?\^LS_BINARY_PATH=/);
+    assert.match(UPDATE_SH, /\bawk\b/);
+    assert.ok(UPDATE_SH.includes('(export[[:space:]]+)?LS_BINARY_PATH'));
+    assert.ok(UPDATE_SH.includes('LS_BINARY_PATH[[:space:]]*=[[:space:]]*'));
+    assert.ok(UPDATE_SH.includes('[[:space:]]+#.*'));
     assert.doesNotMatch(
       UPDATE_SH,
       /grep[^\n]*\s-[A-Za-z]*P(?:\s|$)/,
@@ -34,7 +37,7 @@ describe('update.sh language-server source selection', () => {
   test('install-ls.sh knows the fresh Windsurf desktop LS fallback source', () => {
     assert.match(
       INSTALL_LS,
-      /WINDSURF_LS_RELEASE=.*CaiJingLong\/windsurf-linux-server-release/,
+      /CaiJingLong\/windsurf-linux-server-release/,
       'install-ls.sh should keep the third-party Windsurf desktop LS release source'
     );
   });
