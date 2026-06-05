@@ -64,6 +64,11 @@ function numberField(fields, num) {
   return f ? Number(f.value || 0) : null;
 }
 
+function boolField(fields, num) {
+  const n = numberField(fields, num);
+  return n == null ? null : n !== 0;
+}
+
 function countRepeatedMessageFields(fields, num) {
   return getAllFields(fields, num).filter(f => f.wireType === 2).length;
 }
@@ -93,18 +98,86 @@ function summarizeMessageChildren(buf, maxFields = 12) {
 const NATIVE_TOOL_CONFIG_FIELDS = new Map([
   [5, 'find'],
   [8, 'run_command'],
+  [13, 'search_web'],
   [10, 'view_file'],
   [19, 'list_dir'],
   [33, 'grep_v2'],
+  [37, 'read_url_content'],
 ]);
+
+const THIRD_PARTY_WEB_SEARCH_PROVIDER = new Map([
+  [0, 'UNSPECIFIED'],
+  [1, 'OPENAI'],
+]);
+
+const THIRD_PARTY_WEB_SEARCH_MODEL = new Map([
+  [0, 'UNSPECIFIED'],
+  [1, 'O3'],
+  [2, 'GPT_4_1'],
+  [3, 'O4_MINI'],
+]);
+
+const CASCADE_WEB_REQUESTS_AUTO_EXECUTION = new Map([
+  [0, 'UNSPECIFIED'],
+  [1, 'DISABLED'],
+  [2, 'ALLOWLIST'],
+  [3, 'TURBO'],
+]);
+
+function enumSummary(value, names) {
+  return value == null ? null : {
+    value,
+    name: names.get(value) || `UNKNOWN_${value}`,
+  };
+}
+
+function summarizeThirdPartyWebSearchConfig(buf) {
+  const fields = parseFields(buf);
+  return {
+    provider: enumSummary(numberField(fields, 1), THIRD_PARTY_WEB_SEARCH_PROVIDER),
+    model: enumSummary(numberField(fields, 2), THIRD_PARTY_WEB_SEARCH_MODEL),
+    fieldNumbers: fields.map(f => f.field),
+  };
+}
+
+function summarizeAutoWebRequestConfig(buf) {
+  const fields = parseFields(buf);
+  const allowlist = getAllFields(fields, 1)
+    .filter(f => f.wireType === 2)
+    .map(f => ({ bytes: f.value.length, sha256: shortHash(f.value) }));
+  return {
+    allowlistCount: allowlist.length,
+    allowlist,
+    autoExecutionPolicy: enumSummary(numberField(fields, 2), CASCADE_WEB_REQUESTS_AUTO_EXECUTION),
+    fieldNumbers: fields.map(f => f.field),
+  };
+}
 
 function summarizeNativeToolSubconfig(fields, num) {
   const f = getField(fields, num, 2);
   if (!f) return null;
   const summary = summarizeMessageChildren(f.value);
+  const kind = NATIVE_TOOL_CONFIG_FIELDS.get(num) || `field_${num}`;
+  let decoded = null;
+  try {
+    const subFields = parseFields(f.value);
+    if (kind === 'search_web') {
+      const thirdParty = getField(subFields, 2, 2);
+      decoded = {
+        forceDisable: boolField(subFields, 1),
+        thirdPartyConfig: thirdParty ? summarizeThirdPartyWebSearchConfig(thirdParty.value) : null,
+      };
+    } else if (kind === 'read_url_content') {
+      const autoWeb = getField(subFields, 2, 2);
+      decoded = {
+        forceDisable: boolField(subFields, 1),
+        autoWebRequestConfig: autoWeb ? summarizeAutoWebRequestConfig(autoWeb.value) : null,
+      };
+    }
+  } catch {}
   return {
     field: num,
-    kind: NATIVE_TOOL_CONFIG_FIELDS.get(num) || `field_${num}`,
+    kind,
     bytes: summary.bytes,
     fieldNumbers: summary.fieldNumbers,
     fields: summary.fields.map(child => ({
@@ -112,6 +185,7 @@ function summarizeNativeToolSubconfig(fields, num) {
       wireType: child.wireType,
       bytes: child.bytes,
     })),
+    ...(decoded ? { decoded } : {}),
   };
 }
 

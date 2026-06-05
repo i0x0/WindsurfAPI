@@ -12,8 +12,15 @@ Default production canary scope is intentionally limited to
 protocol matrix testing, but they are not in the default native bridge tool
 allowlist. To test them, set
 `WINDSURFAPI_NATIVE_TOOL_BRIDGE_TOOLS=Read,Bash,Grep,Glob` or a narrower list
-for a gated account/API key/model. Do not treat successful protobuf
-encode/decode round-trips as production readiness.
+for a gated account/API key/model.
+
+Do not add `WebSearch` / `WebFetch` to a production allowlist yet. v2.0.126
+confirmed their tool-config fields and subconfig enums, but live LS canaries
+still return a `permission_denied` Cascade error step before any web oneof is
+emitted.
+
+Do not treat successful protobuf encode/decode round-trips as production
+readiness.
 
 ## Confirmed Tool Config Fields
 
@@ -22,18 +29,24 @@ encode/decode round-trips as production readiness.
 - `find` = field `5` (`FindToolConfig`)
 - `run_command` = field `8` (`RunCommandToolConfig`)
 - `view_file` = field `10` (`ViewFileToolConfig`)
+- `search_web` = field `13` (`SearchWebToolConfig`)
 - `list_dir` = field `19` (`ListDirToolConfig`)
 - `tool_allowlist` = repeated field `32`
 - `grep_v2` = field `33` (`GrepV2ToolConfig`)
+- `read_url_content` = field `37` (`ReadUrlContentToolConfig`)
 
 Confirmed from LS binary protobuf struct tags and runtime trace.
 
 Not confirmed yet:
 
-- `search_web` tool-config submessage field.
-- `read_url_content` tool-config submessage field.
 - Exact web result/document payload shape beyond the summary field currently
   surfaced in trajectory steps.
+- Whether the local LS can expose web tools as proposal-only native bridge
+  calls. A v2.0.125/v2.0.126 VPS canary confirmed normal trial/pro accounts had
+  `cascadeWebSearchEnabled=true`, and direct `GetWebSearchResults` returned
+  HTTP 200 with results for every loaded account. The failure is therefore in
+  the LS native web executor path, not in account web entitlement or the public
+  web-search API.
 
 `FindToolConfig`:
 
@@ -70,6 +83,48 @@ Not confirmed yet:
 - Method confirms `enterprise_config`.
 - No safe non-empty field is hardcoded yet.
 
+`SearchWebToolConfig`:
+
+- `force_disable` = field `1` (`optional bool`)
+- `third_party_config` = field `2`
+  (`exa.codeium_common_pb.ThirdPartyWebSearchConfig`)
+
+`ThirdPartyWebSearchConfig`:
+
+- `provider` = field `1`
+  - `0` = `THIRD_PARTY_WEB_SEARCH_PROVIDER_UNSPECIFIED`
+  - `1` = `THIRD_PARTY_WEB_SEARCH_PROVIDER_OPENAI`
+- `model` = field `2`
+  - `0` = `THIRD_PARTY_WEB_SEARCH_MODEL_UNSPECIFIED`
+  - `1` = `THIRD_PARTY_WEB_SEARCH_MODEL_O3`
+  - `2` = `THIRD_PARTY_WEB_SEARCH_MODEL_GPT_4_1`
+  - `3` = `THIRD_PARTY_WEB_SEARCH_MODEL_O4_MINI`
+
+`ReadUrlContentToolConfig`:
+
+- `force_disable` = field `1` (`optional bool`)
+- `auto_web_request_config` = field `2`
+  (`AutoWebRequestConfig`)
+
+`AutoWebRequestConfig`:
+
+- `allowlist` = repeated field `1` (`string`)
+- `auto_execution_policy` = field `2`
+  - `0` = `CASCADE_WEB_REQUESTS_AUTO_EXECUTION_UNSPECIFIED`
+  - `1` = `CASCADE_WEB_REQUESTS_AUTO_EXECUTION_DISABLED`
+  - `2` = `CASCADE_WEB_REQUESTS_AUTO_EXECUTION_ALLOWLIST`
+  - `3` = `CASCADE_WEB_REQUESTS_AUTO_EXECUTION_TURBO`
+
+`CortexStepSearchWeb`:
+
+- `query` = field `1`
+- `web_documents` = repeated field `2`
+  (`exa.codeium_common_pb.KnowledgeBaseItem`)
+- `domain` = field `3`
+- `web_search_url` = field `4`
+- `summary` = field `5`
+- `third_party_config` = field `6`
+
 ## Runtime Step Caveat
 
 `CortexTrajectoryStep.type` is not a reliable body-field number. Some traces
@@ -86,21 +141,72 @@ This is trace visibility, not a production enablement decision. The bridge can
 decode these steps when Cascade emits them, but WebSearch/WebFetch still need
 gated live smoke before they can join the default native bridge allowlist.
 
+## WebSearch/WebFetch Canary Result
+
+The v2.0.126 protocol pass tested a gated VPS canary with:
+
+```text
+WINDSURFAPI_NATIVE_TOOL_BRIDGE_TOOLS=WebSearch,WebFetch
+WINDSURFAPI_NATIVE_TOOL_BRIDGE_MODELS=claude-sonnet-4.6
+WINDSURFAPI_NATIVE_TOOL_BRIDGE_ACCOUNTS=<single account id>
+WINDSURFAPI_NATIVE_TOOL_BRIDGE_POLL_AFTER_TOOL=1
+WINDSURFAPI_PROTO_TRACE=1
+```
+
+Control checks:
+
+- `GetCliTeamSettings` returned `cascadeWebSearchEnabled=true`.
+- Direct `GetWebSearchResults` returned HTTP 200 and web results.
+
+Raw subconfigs tested:
+
+```text
+# SearchWebToolConfig.third_party_config { provider=OPENAI, model=O4_MINI }
+# ReadUrlContentToolConfig.auto_web_request_config { auto_execution_policy=TURBO }
+search_web:120408011003;read_url_content:12021003
+```
+
+Result:
+
+- `SendUserCascadeMessage` included `CascadeToolConfig.search_web=13` and
+  `read_url_content=37` with those non-empty subconfigs.
+- `GetCascadeTrajectorySteps` returned the same three-step error shape as the
+  empty-config baseline: `find` placeholder, planner/status step, then
+  `type=17` error with a `permission_denied` wrapper.
+- No `field=42 search_web` or `field=40 read_url_content` oneof appeared.
+
+Current conclusion: WebSearch/WebFetch must stay on prompt emulation or a
+separate first-party API bridge until we find the LS-side web executor
+precondition. The confirmed protobuf fields are useful for tracing and future
+matrix work, but not sufficient for production native bridge rollout.
+
 ## Experiment Hooks
 
 `WINDSURFAPI_NATIVE_TOOL_BRIDGE_CONFIG_RAW` can inject exact protobuf bytes
 for native tool subconfigs or unknown top-level `CascadeToolConfig` fields:
 
 ```text
-read_file:<hex>;grep_v2:base64:<base64>;find:<hex>;list_dir:<hex>;field42:<hex>;field40:
+read_file:<hex>;grep_v2:base64:<base64>;find:<hex>;list_dir:<hex>;search_web:<hex>;read_url_content:<hex>;field42:<hex>;field40:
+```
+
+Useful confirmed web examples:
+
+```text
+# provider=OPENAI, model=O4_MINI
+search_web:120408011003
+
+# auto_execution_policy=TURBO
+read_url_content:12021003
+
+# allowlist=["https://example.com/"], auto_execution_policy=ALLOWLIST
+read_url_content:12180a1468747470733a2f2f6578616d706c652e636f6d2f1002
 ```
 
 The hook is default-off and exists only for matrix testing. Smoke must still
 require native source plus argument validation; a raw subconfig that merely
 causes natural-language or degraded `pattern:"*"` output is not a success.
-There is intentionally no `search_web` / `read_url_content` raw-config alias
-until the tool-config field numbers are proven. Use `fieldNN:<hex>`,
-`field_NN:<hex>`, or `fNN:<hex>` only in a gated lab account.
+Use `fieldNN:<hex>`, `field_NN:<hex>`, or `fNN:<hex>` only for unconfirmed
+top-level matrix fields in a gated lab account.
 
 `WINDSURFAPI_NATIVE_TOOL_BRIDGE_POLL_AFTER_TOOL=1` is also lab-only. It keeps
 polling Cascade after the first `cascade_native` tool call so protobuf traces

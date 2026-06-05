@@ -623,6 +623,8 @@ function buildCascadeConfig(modelEnum, modelUid, { toolPreamble, forceDefault, n
  *   8  RunCommandToolConfig run_command
  *   10 ViewFileToolConfig   view_file
  *   19 ListDirToolConfig    list_dir
+ *   13 SearchWebToolConfig  search_web
+ *   37 ReadUrlContentToolConfig read_url_content
  *   33 GrepV2ToolConfig     grep_v2
  *   5  FindToolConfig       find
  *   32 repeated string tool_allowlist
@@ -656,6 +658,12 @@ function buildNativeCascadeToolConfig(allowlist = null) {
   }
   if (enabled.find) {
     parts.push(writeNativeToolConfigField(5, 'find', rawSubconfigs));
+  }
+  if (enabled.searchWeb) {
+    parts.push(writeNativeToolConfigField(13, 'search_web', rawSubconfigs));
+  }
+  if (enabled.readUrlContent) {
+    parts.push(writeNativeToolConfigField(37, 'read_url_content', rawSubconfigs));
   }
   for (const [field, payload] of rawSubconfigs.unknownFields) {
     parts.push(writeBytesField(field, payload));
@@ -716,6 +724,13 @@ function normalizeNativeToolConfigKind(kind) {
     ['grep', 'grep_v2'],
     ['find', 'find'],
     ['glob', 'find'],
+    ['search_web', 'search_web'],
+    ['web_search', 'search_web'],
+    ['websearch', 'search_web'],
+    ['toolsearch', 'search_web'],
+    ['read_url_content', 'read_url_content'],
+    ['web_fetch', 'read_url_content'],
+    ['webfetch', 'read_url_content'],
   ]);
   const normalized = map.get(key.toLowerCase());
   if (!normalized) throw new Error(`Unknown native tool config kind: ${key}`);
@@ -754,6 +769,8 @@ function nativeToolConfigSwitches(list) {
     listDir: has('list_dir', 'list_directory'),
     grepV2: has('grep_v2', 'grep_search_v2', 'grep_search', 'Grep'),
     find: has('find', 'Glob'),
+    searchWeb: has('search_web', 'web_search', 'WebSearch', 'ToolSearch'),
+    readUrlContent: has('read_url_content', 'WebFetch'),
   };
 }
 

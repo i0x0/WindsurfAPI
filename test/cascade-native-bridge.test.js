@@ -618,6 +618,38 @@ describe('buildSendCascadeMessageRequest — additional_steps on field 9', () =>
     }
   });
 
+  it('native allowlist emits confirmed WebSearch/WebFetch tool-config fields', () => {
+    const proto = buildSendCascadeMessageRequest('k', 'cid', 'hi', 12345, 'MODEL_TEST', 'sess', {
+      nativeMode: true,
+      nativeAllowlist: ['search_web', 'read_url_content'],
+    });
+    const top = parseFields(proto);
+    const cfg = parseFields(getField(top, 5, 2).value);
+    const planner = parseFields(getField(cfg, 1, 2).value);
+    const tc = parseFields(getField(planner, 13, 2).value);
+    assert.equal(getField(tc, 13, 2).value.length, 0, 'search_web should use SearchWebToolConfig field 13');
+    assert.equal(getField(tc, 37, 2).value.length, 0, 'read_url_content should use ReadUrlContentToolConfig field 37');
+    assert.deepEqual(getAllFields(tc, 32).map(f => f.value.toString('utf8')), ['search_web', 'read_url_content']);
+  });
+
+  it('native tool config raw overrides support web tool aliases', () => {
+    process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_CONFIG_RAW = 'search_web:0800;read_url_content:0a00';
+    try {
+      const proto = buildSendCascadeMessageRequest('k', 'cid', 'hi', 12345, 'MODEL_TEST', 'sess', {
+        nativeMode: true,
+        nativeAllowlist: ['search_web', 'read_url_content'],
+      });
+      const top = parseFields(proto);
+      const cfg = parseFields(getField(top, 5, 2).value);
+      const planner = parseFields(getField(cfg, 1, 2).value);
+      const tc = parseFields(getField(planner, 13, 2).value);
+      assert.equal(getField(tc, 13, 2).value.toString('hex'), '0800');
+      assert.equal(getField(tc, 37, 2).value.toString('hex'), '0a00');
+    } finally {
+      delete process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_CONFIG_RAW;
+    }
+  });
+
   it('nativeMode=true can carry environment facts without tool emulation schema', () => {
     const proto = buildSendCascadeMessageRequest('k', 'cid', 'hi', 12345, 'MODEL_TEST', 'sess', {
       nativeMode: true,

@@ -169,6 +169,61 @@ describe('proto trace', () => {
     assert.equal(rec.semantic.nativeToolConfig.unknownFields[1].bytes, 0);
   });
 
+  it('summarizes confirmed web native tool config fields as subconfigs', () => {
+    process.env.WINDSURFAPI_PROTO_TRACE = '1';
+    const proto = buildSendCascadeMessageRequest('k', 'cid', 'hi', 12345, 'MODEL_TEST', 'sess', {
+      nativeMode: true,
+      nativeAllowlist: ['search_web', 'read_url_content'],
+    });
+
+    traceGrpcPayload({
+      port: 42100,
+      path: '/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage',
+      direction: 'request',
+      body: grpcFrame(proto),
+      transport: 'grpc',
+      framed: true,
+    });
+
+    const file = join(dir, `ls-proto-${process.pid}-SendUserCascadeMessage.jsonl`);
+    const rec = JSON.parse(readFileSync(file, 'utf8').trim());
+    assert.deepEqual(rec.semantic.nativeToolConfig.allowlist, ['search_web', 'read_url_content']);
+    assert.deepEqual(rec.semantic.nativeToolConfig.subconfigFields, [13, 37]);
+    assert.deepEqual(rec.semantic.nativeToolConfig.subconfigs.map(s => s.kind), ['search_web', 'read_url_content']);
+    assert.deepEqual(rec.semantic.nativeToolConfig.unknownFields, []);
+  });
+
+  it('decodes web native tool subconfig enums without leaking URL allowlists', () => {
+    process.env.WINDSURFAPI_PROTO_TRACE = '1';
+    process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_CONFIG_RAW =
+      'search_web:120408011003;read_url_content:12180a1468747470733a2f2f6578616d706c652e636f6d2f1002';
+    const proto = buildSendCascadeMessageRequest('k', 'cid', 'hi', 12345, 'MODEL_TEST', 'sess', {
+      nativeMode: true,
+      nativeAllowlist: ['search_web', 'read_url_content'],
+    });
+
+    traceGrpcPayload({
+      port: 42100,
+      path: '/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage',
+      direction: 'request',
+      body: grpcFrame(proto),
+      transport: 'grpc',
+      framed: true,
+    });
+
+    const file = join(dir, `ls-proto-${process.pid}-SendUserCascadeMessage.jsonl`);
+    const line = readFileSync(file, 'utf8').trim();
+    const rec = JSON.parse(line);
+    const search = rec.semantic.nativeToolConfig.subconfigs.find(s => s.kind === 'search_web');
+    const fetch = rec.semantic.nativeToolConfig.subconfigs.find(s => s.kind === 'read_url_content');
+    assert.equal(search.decoded.thirdPartyConfig.provider.name, 'OPENAI');
+    assert.equal(search.decoded.thirdPartyConfig.model.name, 'O4_MINI');
+    assert.equal(fetch.decoded.autoWebRequestConfig.autoExecutionPolicy.name, 'ALLOWLIST');
+    assert.equal(fetch.decoded.autoWebRequestConfig.allowlistCount, 1);
+    assert.equal(fetch.decoded.autoWebRequestConfig.allowlist[0].bytes, 'https://example.com/'.length);
+    assert.ok(!line.includes('https://example.com/'));
+  });
+
   it('adds semantic GetCascadeTrajectorySteps native oneof summaries', () => {
     process.env.WINDSURFAPI_PROTO_TRACE = '1';
     const grepBody = Buffer.concat([
