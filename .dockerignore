@@ -16,7 +16,8 @@ model-access.json
 *.png
 docs
 audit
-scripts
+scripts/*
+!scripts/native-bridge-smoke.mjs
 bugsy
 windsurf-api
 codeium.zip

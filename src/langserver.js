@@ -26,7 +26,7 @@ const DEFAULT_API_URL = 'https://server.self-serve.windsurf.com';
 const DEFAULT_LINUX_DATA_ROOT = '/opt/windsurf/data';
 
 // v2.0.96: cap LS pool size to prevent memory blowup (#174).
-// v2.0.98: make the default adaptive. Current LS builds can consume
+// v2.0.99: make the default adaptive. Current LS builds can consume
 // ~500-600MB RSS including the child worker, so a fixed default of 20 is
 // unsafe on 2GB VPSes. Operators with large machines can still override.
 const DEFAULT_LS_RSS_ESTIMATE_BYTES = 700 * 1024 * 1024;

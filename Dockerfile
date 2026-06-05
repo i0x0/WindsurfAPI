@@ -25,6 +25,7 @@ RUN apt-get update \
 
 COPY package.json ./
 COPY src ./src
+COPY scripts/native-bridge-smoke.mjs ./scripts/native-bridge-smoke.mjs
 COPY install-ls.sh setup.sh .env.example ./
 
 RUN sed -i 's/\r$//' install-ls.sh setup.sh \
