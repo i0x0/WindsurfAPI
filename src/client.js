@@ -941,6 +941,14 @@ export class WindsurfClient {
                 onChunk?.(chunk);
               }
             }
+            // Native bridge is a proposal bridge for OpenAI clients. Once a
+            // Cascade-native IDE step has been surfaced as a tool_call, stop
+            // polling immediately so the LS does not keep executing the
+            // built-in tool in the remote workspace while the client waits.
+            if (nativeMode && step.toolCalls.some(tc => tc.cascade_native)) {
+              endReason = 'native_tool_call';
+              break;
+            }
           }
 
           // Thinking delta: the LS keeps `thinking` as the cumulative
@@ -988,6 +996,7 @@ export class WindsurfClient {
             onChunk?.(chunk);
           }
         }
+        if (endReason === 'native_tool_call') break;
 
         // Warm stall: text stopped growing while planner is active.
         // Placed AFTER the step loop so lastGrowthAt is current-poll fresh.
@@ -1119,7 +1128,8 @@ export class WindsurfClient {
         lastStatus,
         ms: Date.now() - startTime,
       };
-      const shortNormalDone = endReason === 'idle_done' && (sawText || seenToolCallIds.size > 0);
+      const shortNormalDone = (endReason === 'idle_done' || endReason === 'native_tool_call')
+        && (sawText || seenToolCallIds.size > 0);
       if (totalYielded < 20 && endReason !== 'aborted' && !shortNormalDone) {
         log.warn('Cascade short reply', summary);
       } else {

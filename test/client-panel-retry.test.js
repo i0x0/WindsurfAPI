@@ -89,6 +89,16 @@ function trajectoryStepsResponse(text) {
   return writeMessageField(1, step);
 }
 
+function runCommandStepResponse(command = 'printf HELLO') {
+  const runCommandBody = writeStringField(23, command);
+  const step = Buffer.concat([
+    writeVarintField(1, 28),
+    writeVarintField(4, 1),
+    writeMessageField(28, runCommandBody),
+  ]);
+  return writeMessageField(1, step);
+}
+
 async function withFakeLanguageServer(handler, fn) {
   const server = http2.createServer();
   server.on('stream', handler);
@@ -284,6 +294,78 @@ describe('WindsurfClient cascade panel retry', () => {
       assert.notEqual(chunks.cascadeId, 'long-dead-cascade');
       assert.equal(chunks.reuseEntryInvalidated, true, 'should signal the caller to skip restoring the dead entry');
       assert.match(chunks.map(c => c.text || '').join(''), /recovered-output/);
+    });
+  });
+
+  it('native bridge returns after first cascade-native tool call instead of waiting for remote execution', async () => {
+    process.env.CASCADE_POLL_INTERVAL_MS = '10';
+    process.env.CASCADE_IDLE_GRACE_MS = '1';
+    process.env.CASCADE_MAX_WAIT_MS = '500';
+    process.env.CASCADE_COLD_STALL_BASE_MS = '500';
+    process.env.CASCADE_WARM_STALL_MS = '500';
+    process.env.GRPC_PROTOCOL = 'connect';
+
+    let statusPolls = 0;
+    let stepPolls = 0;
+    const streamed = [];
+
+    await withFakeLanguageServer((stream, headers) => {
+      const chunks = [];
+      stream.on('data', chunk => chunks.push(chunk));
+      stream.on('end', () => {
+        const path = String(headers[':path'] || '');
+        const method = path.split('/').pop();
+
+        if (method === 'StartCascade') {
+          stream.respond({ ':status': 200, 'content-type': headers['content-type'] || 'application/grpc' });
+          stream.end(responseBody(startCascadeResponse('native-cascade'), headers));
+          return;
+        }
+
+        if (method === 'SendUserCascadeMessage') {
+          stream.respond({ ':status': 200, 'content-type': headers['content-type'] || 'application/grpc' });
+          stream.end(responseBody(Buffer.alloc(0), headers));
+          return;
+        }
+
+        if (method === 'GetCascadeTrajectorySteps') {
+          stepPolls++;
+          stream.respond({ ':status': 200, 'content-type': headers['content-type'] || 'application/grpc' });
+          stream.end(responseBody(runCommandStepResponse('printf HELLO'), headers));
+          return;
+        }
+
+        if (method === 'GetCascadeTrajectory') {
+          statusPolls++;
+          stream.respond({ ':status': 200, 'content-type': headers['content-type'] || 'application/grpc' });
+          stream.end(responseBody(trajectoryStatusResponse(2), headers));
+          return;
+        }
+
+        if (method === 'GetCascadeTrajectoryGeneratorMetadata') {
+          stream.respond({ ':status': 200, 'content-type': headers['content-type'] || 'application/grpc' });
+          stream.end(responseBody(Buffer.alloc(0), headers));
+          return;
+        }
+
+        stream.respond({ ':status': 404 });
+        stream.end();
+      });
+    }, async (port) => {
+      const { WindsurfClient } = await import('../src/client.js');
+      const client = new WindsurfClient('test-api-key', port, 'csrf-token');
+      const chunks = await client.cascadeChat([{ role: 'user', content: 'run it' }], 0, 'claude-4.5-haiku', {
+        nativeMode: true,
+        nativeAllowlist: ['run_command'],
+        onChunk: c => streamed.push(c),
+      });
+
+      assert.equal(stepPolls, 1);
+      assert.equal(statusPolls, 0, 'native tool call should end before status polling waits for remote execution');
+      assert.equal(chunks.toolCalls.length, 1);
+      assert.equal(chunks.toolCalls[0].name, 'run_command');
+      assert.match(chunks.toolCalls[0].argumentsJson, /printf HELLO/);
+      assert.equal(streamed.filter(c => c.nativeToolCall).length, 1);
     });
   });
 });

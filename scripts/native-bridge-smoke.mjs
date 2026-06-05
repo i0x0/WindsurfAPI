@@ -222,19 +222,36 @@ if (!selected.length) {
 }
 
 const results = {};
+const failures = [];
 for (const name of selected) {
   const scenario = SCENARIOS[name];
   results[name] = {};
-  if (nonStreamEnabled) results[name].nonStream = await runNonStream(name, scenario);
-  if (streamEnabled) results[name].stream = await runStream(name, scenario);
+  if (nonStreamEnabled) {
+    try {
+      results[name].nonStream = await runNonStream(name, scenario);
+    } catch (error) {
+      results[name].nonStream = { ok: false, error: String(error?.message || error) };
+      failures.push(`${name} non-stream: ${String(error?.message || error)}`);
+    }
+  }
+  if (streamEnabled) {
+    try {
+      results[name].stream = await runStream(name, scenario);
+    } catch (error) {
+      results[name].stream = { ok: false, error: String(error?.message || error) };
+      failures.push(`${name} stream: ${String(error?.message || error)}`);
+    }
+  }
 }
 
 console.log(JSON.stringify({
-  ok: true,
+  ok: failures.length === 0,
   baseUrl,
   model,
   marker,
   timeoutMs: requestTimeoutMs,
   scenarios: selected,
   results,
+  failures,
 }, null, 2));
+if (failures.length) process.exit(1);
