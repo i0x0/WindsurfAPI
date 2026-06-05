@@ -8,8 +8,9 @@ is a default production enablement decision.
 Default production canary scope is intentionally limited to
 `Bash` / `shell_command` / `run_command`.
 
-`Read`, `Grep`, and `Glob` stay in `TOOL_MAP` for protocol matrix testing, but
-they are not in the default native bridge tool allowlist. To test them, set
+`Read`, `Grep`, `Glob`, `WebSearch`, and `WebFetch` stay in `TOOL_MAP` for
+protocol matrix testing, but they are not in the default native bridge tool
+allowlist. To test them, set
 `WINDSURFAPI_NATIVE_TOOL_BRIDGE_TOOLS=Read,Bash,Grep,Glob` or a narrower list
 for a gated account/API key/model. Do not treat successful protobuf
 encode/decode round-trips as production readiness.
@@ -26,6 +27,13 @@ encode/decode round-trips as production readiness.
 - `grep_v2` = field `33` (`GrepV2ToolConfig`)
 
 Confirmed from LS binary protobuf struct tags and runtime trace.
+
+Not confirmed yet:
+
+- `search_web` tool-config submessage field.
+- `read_url_content` tool-config submessage field.
+- Exact web result/document payload shape beyond the summary field currently
+  surfaced in trajectory steps.
 
 `FindToolConfig`:
 
@@ -69,6 +77,15 @@ show `type=14` with payload on `field=19`, and `type=15` with `field=20`
 planner response data. Keep parsing based on actual oneof/message fields and
 trace unknown message-field children before promoting a new mapping.
 
+Trajectory parsing now recognizes the web step oneofs observed so far:
+
+- `read_url_content` = field `40`, body `{ url=1, summary=5 }`
+- `search_web` = field `42`, body `{ query=1, domain=3, summary=5 }`
+
+This is trace visibility, not a production enablement decision. The bridge can
+decode these steps when Cascade emits them, but WebSearch/WebFetch still need
+gated live smoke before they can join the default native bridge allowlist.
+
 ## Experiment Hooks
 
 `WINDSURFAPI_NATIVE_TOOL_BRIDGE_CONFIG_RAW` can inject exact protobuf bytes
@@ -81,6 +98,8 @@ read_file:<hex>;grep_v2:base64:<base64>;find:<hex>;list_dir:<hex>
 The hook is default-off and exists only for matrix testing. Smoke must still
 require native source plus argument validation; a raw subconfig that merely
 causes natural-language or degraded `pattern:"*"` output is not a success.
+There is intentionally no `search_web` / `read_url_content` raw-config alias
+until the tool-config field numbers are proven.
 
 ## Next Matrix
 

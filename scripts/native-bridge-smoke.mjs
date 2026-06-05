@@ -94,6 +94,13 @@ const TOOL = {
     pattern: { type: 'string' },
     path: { type: 'string' },
   }, ['pattern']),
+  WebSearch: fnTool('WebSearch', {
+    query: { type: 'string' },
+    domains: { type: 'array', items: { type: 'string' } },
+  }, ['query']),
+  WebFetch: fnTool('WebFetch', {
+    url: { type: 'string' },
+  }, ['url']),
 };
 
 const SCENARIOS = {
@@ -139,6 +146,24 @@ const SCENARIOS = {
     tools: [TOOL.Read, TOOL.Bash, TOOL.Grep, TOOL.Glob],
     choice: null,
     prompt: `Choose exactly one appropriate tool from Read, Bash, Grep, Glob to inspect ${smokeFile} for ${marker}. Do not answer in prose.`,
+  },
+  WebSearch: {
+    tools: [TOOL.WebSearch],
+    choice: 'WebSearch',
+    prompt: `Use the WebSearch tool exactly once with query "WindsurfAPI native bridge ${marker}". Do not answer in prose.`,
+    expectArgs: `query containing ${marker}`,
+    validateArgs(args) {
+      return String(args.query || '').includes(marker);
+    },
+  },
+  WebFetch: {
+    tools: [TOOL.WebFetch],
+    choice: 'WebFetch',
+    prompt: `Use the WebFetch tool exactly once with url https://example.com/. Marker: ${marker}. Do not answer in prose.`,
+    expectArgs: 'url exactly https://example.com/',
+    validateArgs(args) {
+      return String(args.url || '').trim() === 'https://example.com/';
+    },
   },
 };
 

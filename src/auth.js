@@ -52,6 +52,17 @@ function isAccountBusyForProbe(account) {
   return accountInflight(account) > 0 || accountMaintenance(account) > 0 || accountLsMaintenance(account) > 0;
 }
 
+function maintenanceBusyReason(account) {
+  if (accountInflight(account) > 0) return 'account_inflight';
+  if (accountMaintenance(account) > 0) return 'account_maintenance';
+  if (accountLsMaintenance(account) > 0) return 'ls_maintenance';
+  return '';
+}
+
+function shouldSkipBusyBackgroundMaintenance() {
+  return process.env.WINDSURFAPI_BACKGROUND_MAINTENANCE_SKIP_BUSY !== '0';
+}
+
 function isAccountInMaintenance(account) {
   return accountMaintenance(account) > 0 || accountLsMaintenance(account) > 0;
 }
@@ -1400,10 +1411,17 @@ export async function refreshCredits(id) {
   }
 }
 
-export async function refreshAllCredits() {
+export async function refreshAllCredits({ skipBusy = false } = {}) {
   const results = [];
   for (const a of accounts) {
     if (a.status !== 'active') continue;
+    if (skipBusy) {
+      const busyReason = maintenanceBusyReason(a);
+      if (busyReason) {
+        results.push({ id: a.id, email: a.email, ok: false, skipped: true, reason: busyReason });
+        continue;
+      }
+    }
     const r = await refreshCredits(a.id);
     results.push({ id: a.id, email: a.email, ok: r.ok, error: r.error });
   }
@@ -1931,10 +1949,17 @@ export function emitNoAuthWarnings(bindHost = '0.0.0.0') {
  * Refresh Firebase tokens for all accounts that have a stored refreshToken.
  * Re-registers with Codeium to get a fresh API key and updates the account.
  */
-async function refreshAllFirebaseTokens() {
+async function refreshAllFirebaseTokens({ skipBusy = false } = {}) {
   const { refreshFirebaseToken, reRegisterWithCodeium } = await import('./dashboard/windsurf-login.js');
   for (const a of accounts) {
     if (a.status !== 'active' || !a.refreshToken) continue;
+    if (skipBusy) {
+      const busyReason = maintenanceBusyReason(a);
+      if (busyReason) {
+        log.debug(`Firebase refresh ${a.id} skipped: ${busyReason}`);
+        continue;
+      }
+    }
     try {
       const proxy = getEffectiveProxy(a.id) || null;
       const { idToken, refreshToken: newRefresh } = await refreshFirebaseToken(a.refreshToken, proxy);
@@ -2002,9 +2027,10 @@ export async function initAuth() {
   // Periodic credit refresh (every 15 min). First run is fire-and-forget so
   // startup isn't blocked by cloud round-trips.
   const CREDIT_INTERVAL = 15 * 60 * 1000;
-  refreshAllCredits().catch(e => log.warn(`Initial credit refresh: ${e.message}`));
+  const skipBusyMaintenance = shouldSkipBusyBackgroundMaintenance();
+  refreshAllCredits({ skipBusy: skipBusyMaintenance }).catch(e => log.warn(`Initial credit refresh: ${e.message}`));
   setInterval(() => {
-    refreshAllCredits().catch(e => log.warn(`Scheduled credit refresh: ${e.message}`));
+    refreshAllCredits({ skipBusy: skipBusyMaintenance }).catch(e => log.warn(`Scheduled credit refresh: ${e.message}`));
   }, CREDIT_INTERVAL).unref?.();
 
   // Fetch live model catalog from cloud and merge into hardcoded catalog.
@@ -2014,9 +2040,9 @@ export async function initAuth() {
   // Periodic Firebase token refresh (every 50 min). Firebase ID tokens expire
   // after 60 min; refreshing at 50 keeps a comfortable margin.
   const TOKEN_REFRESH_INTERVAL = 50 * 60 * 1000;
-  refreshAllFirebaseTokens().catch(e => log.warn(`Initial token refresh: ${e.message}`));
+  refreshAllFirebaseTokens({ skipBusy: skipBusyMaintenance }).catch(e => log.warn(`Initial token refresh: ${e.message}`));
   setInterval(() => {
-    refreshAllFirebaseTokens().catch(e => log.warn(`Scheduled token refresh: ${e.message}`));
+    refreshAllFirebaseTokens({ skipBusy: skipBusyMaintenance }).catch(e => log.warn(`Scheduled token refresh: ${e.message}`));
   }, TOKEN_REFRESH_INTERVAL).unref?.();
 
   // Warm up the default LS so first chat avoids spawn cost. Proxy-specific

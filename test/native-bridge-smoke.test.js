@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import { once } from 'node:events';
 import { dirname, join } from 'node:path';
@@ -8,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = dirname(__dirname);
+const smokeScript = readFileSync(join(root, 'scripts', 'native-bridge-smoke.mjs'), 'utf8');
 
 function runNodeScript(script, env) {
   return new Promise((resolve, reject) => {
@@ -39,6 +41,14 @@ async function withMockServer(handler, fn) {
 }
 
 describe('native bridge smoke CLI', () => {
+  it('keeps web smoke scenarios explicit instead of adding them to all', () => {
+    assert.match(smokeScript, /WebSearch: fnTool\('WebSearch'/);
+    assert.match(smokeScript, /WebFetch: fnTool\('WebFetch'/);
+    assert.match(smokeScript, /if \(name === 'all'\) out\.push\('Read', 'Bash', 'Grep', 'Glob', 'mixed'\)/);
+    assert.doesNotMatch(smokeScript, /if \(name === 'all'\) out\.push\([^)]*WebSearch/);
+    assert.doesNotMatch(smokeScript, /if \(name === 'all'\) out\.push\([^)]*WebFetch/);
+  });
+
   it('refuses to run scenarios when native bridge is not enabled', async () => {
     let healthHits = 0;
     let chatHits = 0;

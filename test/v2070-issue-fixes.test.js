@@ -227,13 +227,42 @@ describe('parseTrajectorySteps recognises propose_code + search_web (v2.0.70)', 
     ]);
     const resp = wrapResp(wrapStep(42, 42, body));
     const steps = parseTrajectorySteps(resp);
-    // search_web is type 42, not in NATIVE_STEP_FIELDS yet — verify
-    // the step still parses; tool_calls will be empty for kinds the
-    // parser doesn't recognize natively but other consumers can pick
-    // them up. (This test documents current scope; future enhancement
-    // could add 42 to the parser's NATIVE_STEP_FIELDS table.)
     assert.equal(steps.length, 1);
-    // status DONE
     assert.equal(steps[0].status, 3);
+    assert.equal(steps[0].toolCalls[0].name, 'search_web');
+  });
+
+  it('search_web step exposes query/domain/result when parsed natively', () => {
+    const body = Buffer.concat([
+      writeStringField(1, 'todo list react'),
+      writeStringField(3, 'reactjs.org'),
+      writeStringField(5, 'top result: ...'),
+    ]);
+    const resp = wrapResp(wrapStep(42, 42, body));
+    const steps = parseTrajectorySteps(resp);
+    const calls = steps[0].toolCalls.filter(tc => tc.cascade_native);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, 'search_web');
+    assert.deepEqual(JSON.parse(calls[0].argumentsJson), {
+      query: 'todo list react',
+      domain: 'reactjs.org',
+    });
+    assert.equal(calls[0].result, 'top result: ...');
+  });
+
+  it('read_url_content step exposes url/result when parsed natively', () => {
+    const body = Buffer.concat([
+      writeStringField(1, 'https://example.com/docs'),
+      writeStringField(5, 'document summary'),
+    ]);
+    const resp = wrapResp(wrapStep(40, 40, body));
+    const steps = parseTrajectorySteps(resp);
+    const calls = steps[0].toolCalls.filter(tc => tc.cascade_native);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].name, 'read_url_content');
+    assert.deepEqual(JSON.parse(calls[0].argumentsJson), {
+      url: 'https://example.com/docs',
+    });
+    assert.equal(calls[0].result, 'document summary');
   });
 });

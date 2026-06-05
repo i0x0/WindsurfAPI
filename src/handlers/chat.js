@@ -775,6 +775,7 @@ const MODEL_PROVIDERS = {
 
 export function neutralizeCascadeIdentity(text, modelName) {
   if (!text || !modelName) return text;
+  if (looksLikeJsonPayload(text)) return text;
   const provider = MODEL_PROVIDERS[Object.keys(MODEL_PROVIDERS).find(k => modelName.toLowerCase().startsWith(k)) || ''];
   if (!provider) return text;
   return text
@@ -799,6 +800,22 @@ export function neutralizeCascadeIdentity(text, modelName) {
     // "the " is consumed by the same regex so we don't end up with the
     // double-article artefact ("the the workspace").
     .replace(/\b(?:the )?Cascade(?:['’]s)? workspace\b/gi, 'the workspace');
+}
+
+function looksLikeJsonPayload(text) {
+  if (typeof text !== 'string') return false;
+  const s = text.trim();
+  if (!s) return false;
+  if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+    return safeJsonParse(s) !== undefined;
+  }
+  const fenced = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (!fenced) return false;
+  const inner = fenced[1].trim();
+  if (!((inner.startsWith('{') && inner.endsWith('}')) || (inner.startsWith('[') && inner.endsWith(']')))) {
+    return false;
+  }
+  return safeJsonParse(inner) !== undefined;
 }
 
 /**

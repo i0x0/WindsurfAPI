@@ -156,6 +156,18 @@ describe('language server resource policy', () => {
     assert.match(AUTH_JS, /probeAccount\(a\.id, \{ allowLsStart: false \}\)/);
   });
 
+  test('background account maintenance skips busy production accounts by default', () => {
+    assert.match(AUTH_JS, /function maintenanceBusyReason\(account\)/);
+    assert.match(AUTH_JS, /function shouldSkipBusyBackgroundMaintenance\(\)/);
+    assert.match(AUTH_JS, /WINDSURFAPI_BACKGROUND_MAINTENANCE_SKIP_BUSY !== '0'/);
+    assert.match(AUTH_JS, /export async function refreshAllCredits\(\{ skipBusy = false \} = \{\}\)/);
+    assert.match(AUTH_JS, /async function refreshAllFirebaseTokens\(\{ skipBusy = false \} = \{\}\)/);
+    assert.match(AUTH_JS, /const skipBusyMaintenance = shouldSkipBusyBackgroundMaintenance\(\)/);
+    assert.match(AUTH_JS, /refreshAllCredits\(\{ skipBusy: skipBusyMaintenance \}\)/);
+    assert.match(AUTH_JS, /refreshAllFirebaseTokens\(\{ skipBusy: skipBusyMaintenance \}\)/);
+    assert.match(AUTH_JS, /skipped: true, reason: busyReason/);
+  });
+
   test('predictive prewarm is admission-gated and reports structured failures', () => {
     assert.match(AUTH_JS, /const admission = getLsAdmissionForAccount\(nextAccount\.id\)/);
     assert.match(AUTH_JS, /admission\.reason !== 'already_running'/);

@@ -1002,6 +1002,8 @@ export function parseTrajectorySteps(buf) {
     //   23  CortexStepWriteToFile        {target_file_uri=1, code_content=2*}
     //   28  CortexStepRunCommand         {command_line=23, combined_output=21, ...}
     //   34  CortexStepFind               {pattern=1, search_directory=10, ...}
+    //   40  CortexStepReadUrlContent     {url=1, summary=5}
+    //   42  CortexStepSearchWeb          {query=1, domain=3, summary=5}
     //   105 CortexStepGrepSearchV2       {pattern=2, path=3, raw_output=15, ...}
     //
     // We surface these as toolCalls entries shaped like the wrapped
@@ -1018,6 +1020,8 @@ export function parseTrajectorySteps(buf) {
       [28,  'run_command'],
       [13,  'grep_search'],
       [34,  'find'],
+      [40,  'read_url_content'],
+      [42,  'search_web'],
       [105, 'grep_search_v2'],
     ];
     for (const [fieldNum, kind] of NATIVE_STEP_FIELDS) {
@@ -1098,6 +1102,19 @@ export function parseTrajectorySteps(buf) {
             code_content: lines,
           };
           argumentsJson = JSON.stringify(args);
+        } else if (kind === 'read_url_content') {
+          const args = {
+            url: getField(body, 1, 2)?.value?.toString('utf8') || '',
+          };
+          argumentsJson = JSON.stringify(args);
+          result = getField(body, 5, 2)?.value?.toString('utf8') || '';
+        } else if (kind === 'search_web') {
+          const args = {
+            query: getField(body, 1, 2)?.value?.toString('utf8') || '',
+            domain: getField(body, 3, 2)?.value?.toString('utf8') || '',
+          };
+          argumentsJson = JSON.stringify(args);
+          result = getField(body, 5, 2)?.value?.toString('utf8') || '';
         }
       } catch {
         argumentsJson = argumentsJson || '{}';

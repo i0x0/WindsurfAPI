@@ -84,6 +84,21 @@ describe('neutralizeCascadeIdentity', () => {
     assert.equal(neutralizeCascadeIdentity(text, model), text);
   });
 
+  it('does not rewrite parseable JSON payloads', () => {
+    const json = '{"model":"Cascade","message":"I am Cascade","provider":"Codeium"}';
+    assert.equal(neutralizeCascadeIdentity(json, model), json);
+  });
+
+  it('does not rewrite fenced JSON payloads', () => {
+    const json = '```json\n{"message":"Cascade is an AI coding assistant built by Windsurf."}\n```';
+    assert.equal(neutralizeCascadeIdentity(json, model), json);
+  });
+
+  it('does not rewrite parseable JSON arrays', () => {
+    const json = '[{"message":"I was created by Windsurf."}]';
+    assert.equal(neutralizeCascadeIdentity(json, model), json);
+  });
+
   it('returns text unchanged when modelName has no known provider mapping', () => {
     const text = 'I am Cascade.';
     assert.equal(neutralizeCascadeIdentity(text, 'mystery-model'), text);
