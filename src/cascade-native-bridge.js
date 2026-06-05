@@ -1350,6 +1350,7 @@ function nativeBridgeDecision({
   explicitOn,
   allMappedOnly,
   modelKey,
+  model,
   provider,
   route,
 } = {}) {
@@ -1363,6 +1364,7 @@ function nativeBridgeDecision({
     allMappedOnly: !!allMappedOnly,
     useCascade: !!useCascade,
     modelKey: String(modelKey || ''),
+    requestedModel: String(model || ''),
     provider: String(provider || ''),
     route: String(route || ''),
     hasTools: Array.isArray(tools) && tools.length > 0,
@@ -1394,6 +1396,7 @@ export function getNativeBridgeDecision(tools, {
     explicitOn,
     allMappedOnly,
     modelKey,
+    model,
     provider,
     route,
   };
@@ -1423,9 +1426,10 @@ export function getNativeBridgeDecision(tools, {
   return nativeBridgeDecision({ ...base, enabled: true, reason: 'native_bridge_enabled' });
 }
 
-export function shouldUseNativeBridge(tools, { modelKey = '', provider = '', route = '', callerKey = '' } = {}) {
+export function shouldUseNativeBridge(tools, { modelKey = '', model = '', provider = '', route = '', callerKey = '' } = {}) {
   return getNativeBridgeDecision(tools, {
     modelKey,
+    model,
     provider,
     route,
     callerKey,

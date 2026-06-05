@@ -65,6 +65,7 @@ function sanitizeDecision(decision = {}) {
     mode: safeString(decision.mode, 40),
     useCascade: decision.useCascade !== false,
     modelKey: safeString(decision.modelKey || decision.model, 120),
+    requestedModel: safeString(decision.requestedModel || decision.model, 120),
     provider: safeString(decision.provider, 80),
     route: safeString(decision.route, 80),
     toolChoiceFiltered: !!decision.toolChoiceFiltered,

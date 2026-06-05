@@ -60,6 +60,7 @@ describe('native bridge runtime stats', () => {
       mode: 'all_mapped',
       useCascade: true,
       modelKey: 'gpt-5.5-medium',
+      requestedModel: 'gpt-5.5',
       provider: 'openai',
       route: 'chat',
       callerKey: 'api:secret-hash',
@@ -76,6 +77,7 @@ describe('native bridge runtime stats', () => {
       mode: '1',
       useCascade: true,
       modelKey: 'claude-sonnet-4.6',
+      requestedModel: 'claude-sonnet-4.6',
       provider: 'anthropic',
       route: 'chat',
       hasTools: true,
@@ -91,6 +93,8 @@ describe('native bridge runtime stats', () => {
     assert.equal(stats.decisionReasons.native_bridge_model_not_allowed, 1);
     assert.equal(stats.decisionReasons.native_bridge_enabled, 1);
     assert.equal(stats.lastDecision.reason, 'native_bridge_enabled');
+    assert.equal(stats.recentDecisions[0].modelKey, 'gpt-5.5-medium');
+    assert.equal(stats.recentDecisions[0].requestedModel, 'gpt-5.5');
     assert.equal(stats.recentDecisions.length, 2);
     assert.equal(JSON.stringify(stats).includes('secret-hash'), false);
   });

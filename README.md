@@ -276,8 +276,8 @@ curl http://localhost:3003/v1/messages \
 | `LS_PREWARM_DEFAULT` | `1` | 设为 `0` 可跳过启动时 default LS 预热，低内存/全 proxy 池改为首个真实请求再懒启动 |
 | `LS_PREWARM_PROXIES` | `0` | 设为 `1` 才在启动时预热所有 proxy LS；默认按需启动。后台 scheduled probe / 预测 prewarm 只复用空闲常驻 LS，不会为了探测新开/等待/驱逐 LS |
 | `LS_PREWARM_ON_ACCOUNT_ADD` | `0` | 设为 `1` 才在 Dashboard/批量导入/OAuth 添加账号后立即预热对应 LS；默认避免批量录入打爆内存 |
-| `WINDSURFAPI_NATIVE_TOOL_BRIDGE` | 空 | `all_mapped` 仅在 Read/Bash/Grep/Glob 及其别名全部可映射时走 native bridge；`1` 为混合工具 partition 模式。WebSearch/WebFetch 默认仍走 prompt emulation，需显式加入工具 allowlist |
-| `WINDSURFAPI_NATIVE_TOOL_BRIDGE_TOOLS` | `Read,Bash,Grep,Glob` 语义族 | native bridge 工具 allowlist。默认包含 `Read/read_file/view_file`、`Bash/shell_command/run_command`、`Grep/grep_search_v2`、`Glob/find`，不含 WebSearch/WebFetch |
+| `WINDSURFAPI_NATIVE_TOOL_BRIDGE` | 空 | `all_mapped` 仅在已 allowlist 的工具全部可映射时走 native bridge；`1` 为混合工具 partition 模式。WebSearch/WebFetch 默认仍走 prompt emulation，需显式加入工具 allowlist |
+| `WINDSURFAPI_NATIVE_TOOL_BRIDGE_TOOLS` | `Bash/shell_command/run_command` 语义族 | native bridge 工具 allowlist。默认只包含成熟的 Bash/run_command 路径；Read/Grep/Glob 和 WebSearch/WebFetch 需显式加入 allowlist 后再用灰度账号/API key 实测 |
 | `WINDSURFAPI_NATIVE_TOOL_BRIDGE_MODELS` / `PROVIDERS` / `ROUTES` / `CALLERS` / `ACCOUNTS` / `API_KEYS` | 空 | native bridge 灰度门。为空表示不限；设置后必须匹配才启用。`ACCOUNTS` 可填账号 id/email，`API_KEYS` 匹配调用方 API key 但不会把明文 key 传进 chat 逻辑 |
 | `WINDSURFAPI_NATIVE_TOOL_BRIDGE_OFF` | 空 | 设为 `1` 强制关闭 native tool bridge，优先级高于上面的开关 |
 | `WINDSURFAPI_SPECIAL_AGENT_BACKEND` | 空 | 可选 special-agent 后端。设为 `devin-cli` 后，`swe-1.6` / `swe-1.6-fast` / `adaptive` / `arena-*` 不再走 direct Cascade，而是走 Devin CLI PoC |

@@ -129,6 +129,11 @@ export function getRuntimeConfig() {
   return structuredClone(_state);
 }
 
+export function _resetRuntimeConfigForTests(patch = {}) {
+  _state = deepMerge(structuredClone(DEFAULTS), patch);
+  return getRuntimeConfig();
+}
+
 export function getExperimental() {
   return { ...(_state.experimental || {}) };
 }

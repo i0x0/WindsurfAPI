@@ -436,6 +436,26 @@ describe('native mapped-tool routing', () => {
     assert.equal(allowed.nativeDecision.reason, 'native_bridge_enabled');
   });
 
+  it('honors requested model aliases in native bridge model gray gates', () => {
+    process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE = 'all_mapped';
+    process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_TOOLS = 'Read';
+    process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_MODELS = 'claude-haiku-4.5';
+    delete process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_OFF;
+
+    const plan = buildToolRoutingPlan([fnTool('Read')], {
+      useCascade: true,
+      modelKey: 'claude-4.5-haiku',
+      model: 'claude-haiku-4.5',
+      provider: 'anthropic',
+      route: 'chat',
+    });
+
+    assert.equal(plan.nativeBridgeOn, true);
+    assert.equal(plan.nativeDecision.reason, 'native_bridge_enabled');
+    assert.equal(plan.nativeDecision.modelKey, 'claude-4.5-haiku');
+    assert.equal(plan.nativeDecision.requestedModel, 'claude-haiku-4.5');
+  });
+
   it('explains native bridge disabled decisions for operators', () => {
     delete process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE;
     delete process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_TOOLS;

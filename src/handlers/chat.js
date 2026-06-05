@@ -120,11 +120,12 @@ function upstreamTransientErrorMessage(model, triedCount, reason = 'internal_err
   return `${model} 上游 Windsurf Cascade 服务瞬态故障：已在 ${triedCount} 个账号上重试都收到 ${detail}。这是上游或本地语言服务器会话的瞬时问题，建议 30-60 秒后重试；若连续出现，请重启语言服务器。`;
 }
 
-export function buildToolRoutingPlan(tools, { useCascade = false, modelKey = '', provider = null, route = 'chat', callerKey = '' } = {}) {
+export function buildToolRoutingPlan(tools, { useCascade = false, modelKey = '', model = '', provider = null, route = 'chat', callerKey = '' } = {}) {
   const hasTools = Array.isArray(tools) && tools.length > 0;
   const nativeDecision = getNativeBridgeDecision(tools || [], {
     useCascade,
     modelKey,
+    model,
     provider,
     route,
     callerKey,
@@ -1582,6 +1583,7 @@ async function _handleChatCompletionsInner(body, context = {}) {
   const toolRouting = buildToolRoutingPlan(effectiveTools, {
     useCascade,
     modelKey: routingModelKey,
+    model: reqModel || body.model || modelKey,
     provider: modelInfo?.provider || null,
     route: body.__route || 'chat',
     callerKey: nativeBridgeCallerKey,

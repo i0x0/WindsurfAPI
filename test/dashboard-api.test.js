@@ -1,12 +1,13 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { config } from '../src/config.js';
-import { configureBindHost } from '../src/auth.js';
+import { configureBindHost, _resetLockoutForTests } from '../src/auth.js';
 import { buildBatchProxyBinding, handleDashboardApi } from '../src/dashboard/api.js';
 import {
   recordNativeBridgeDecision,
   resetNativeBridgeStats,
 } from '../src/native-bridge-stats.js';
+import { _resetRuntimeConfigForTests } from '../src/runtime-config.js';
 
 const originalDashboardPassword = config.dashboardPassword;
 const originalApiKey = config.apiKey;
@@ -14,6 +15,8 @@ const originalNativeBridgeApiKeys = process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_A
 const originalNativeBridgeAccounts = process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_ACCOUNTS;
 
 afterEach(() => {
+  _resetRuntimeConfigForTests();
+  _resetLockoutForTests();
   config.dashboardPassword = originalDashboardPassword;
   config.apiKey = originalApiKey;
   if (originalNativeBridgeApiKeys === undefined) delete process.env.WINDSURFAPI_NATIVE_TOOL_BRIDGE_API_KEYS;
@@ -51,6 +54,7 @@ describe('dashboard batch import proxy binding', () => {
   });
 
   it('fails closed for dashboard write APIs without auth on non-localhost binds', async () => {
+    _resetRuntimeConfigForTests();
     config.dashboardPassword = '';
     config.apiKey = '';
     configureBindHost('0.0.0.0');
@@ -63,6 +67,7 @@ describe('dashboard batch import proxy binding', () => {
   });
 
   it('allows unauthenticated dashboard writes only on localhost binds', async () => {
+    _resetRuntimeConfigForTests();
     config.dashboardPassword = '';
     config.apiKey = '';
     configureBindHost('127.0.0.1');
@@ -74,6 +79,7 @@ describe('dashboard batch import proxy binding', () => {
   });
 
   it('accepts dashboard auth headers with timing-safe configured secrets', async () => {
+    _resetRuntimeConfigForTests();
     config.dashboardPassword = 'dash-secret';
     config.apiKey = '';
     configureBindHost('0.0.0.0');
@@ -85,6 +91,7 @@ describe('dashboard batch import proxy binding', () => {
   });
 
   it('includes sanitized native bridge telemetry in authenticated overview', async () => {
+    _resetRuntimeConfigForTests();
     config.dashboardPassword = 'dash-secret';
     config.apiKey = '';
     configureBindHost('0.0.0.0');
