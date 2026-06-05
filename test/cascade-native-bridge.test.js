@@ -530,6 +530,28 @@ describe('buildSendCascadeMessageRequest — additional_steps on field 9', () =>
     assert.equal(getField(conv, 12, 2), null, 'nativeMode must not write a no-tool additional_instructions_section');
   });
 
+  it('nativeMode=true can carry environment facts without tool emulation schema', () => {
+    const proto = buildSendCascadeMessageRequest('k', 'cid', 'hi', 12345, 'MODEL_TEST', 'sess', {
+      nativeMode: true,
+      nativeAllowlist: ['view_file'],
+      nativeEnvironment: '- Working directory: /repo\n- Platform: linux',
+    });
+    const top = parseFields(proto);
+    const cfg = parseFields(getField(top, 5, 2).value);
+    const planner = parseFields(getField(cfg, 1, 2).value);
+    const conv = parseFields(getField(planner, 2, 2).value);
+    assert.equal(getField(conv, 4, 0).value, 1, 'nativeMode still uses DEFAULT planner');
+    assert.equal(getField(conv, 10, 2), null, 'native env must not inject tool_calling_section schemas');
+    const additional = getField(conv, 12, 2);
+    assert.ok(additional, 'native env should be written to additional_instructions_section');
+    const section = parseFields(additional.value);
+    const text = getField(section, 2, 2)?.value?.toString('utf8') || '';
+    assert.match(text, /Working directory: \/repo/);
+    assert.match(text, /built-in IDE tools/);
+    assert.doesNotMatch(text, /You have access to the following functions/);
+    assert.doesNotMatch(text, /<tool_call>/);
+  });
+
   it('nativeMode=false (default) keeps planner_mode = NO_TOOL (3) and skips tool_config', () => {
     const proto = buildSendCascadeMessageRequest('k', 'cid', 'hi', 12345, 'MODEL_TEST', 'sess', {});
     const top = parseFields(proto);

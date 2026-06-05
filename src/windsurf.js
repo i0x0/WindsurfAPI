@@ -324,7 +324,7 @@ export function buildStartCascadeRequest(apiKey, sessionId) {
  *          tool X with result Y" into the trajectory before the planner
  *          sees the next user turn. See src/cascade-native-bridge.js.
  */
-export function buildSendCascadeMessageRequest(apiKey, cascadeId, text, modelEnum, modelUid, sessionId, { toolPreamble, images, additionalSteps, nativeMode, nativeAllowlist } = {}) {
+export function buildSendCascadeMessageRequest(apiKey, cascadeId, text, modelEnum, modelUid, sessionId, { toolPreamble, images, additionalSteps, nativeMode, nativeAllowlist, nativeEnvironment } = {}) {
   const parts = [];
 
   // Field 1: cascade_id
@@ -354,6 +354,7 @@ export function buildSendCascadeMessageRequest(apiKey, cascadeId, text, modelEnu
     forceDefault,
     nativeMode: !!nativeMode,
     nativeAllowlist: nativeAllowlist || null,
+    nativeEnvironment: nativeEnvironment || '',
   });
   parts.push(writeMessageField(5, cascadeConfig));
 
@@ -382,7 +383,7 @@ export function buildSendCascadeMessageRequest(apiKey, cascadeId, text, modelEnu
   return Buffer.concat(parts);
 }
 
-function buildCascadeConfig(modelEnum, modelUid, { toolPreamble, forceDefault, nativeMode, nativeAllowlist } = {}) {
+function buildCascadeConfig(modelEnum, modelUid, { toolPreamble, forceDefault, nativeMode, nativeAllowlist, nativeEnvironment } = {}) {
   // CascadeConversationalPlannerConfig.planner_mode (field 4) uses
   // codeium_common.ConversationalPlannerMode:
   //   0 UNSPECIFIED  1 DEFAULT  2 READ_ONLY  3 NO_TOOL
@@ -479,6 +480,21 @@ function buildCascadeConfig(modelEnum, modelUid, { toolPreamble, forceDefault, n
         sp.communicationWithTools),
     ]);
     convParts.push(writeMessageField(13, toolCommOverride));
+  } else if (nativeMode && String(nativeEnvironment || '').trim()) {
+    // Native bridge keeps Cascade's built-in IDE tools active, so we must not
+    // inject caller tool schemas here. Still, file-oriented native tools
+    // (view_file/find/grep) need the caller's real cwd to outrank the proxy's
+    // placeholder /tmp/windsurf-workspace metadata. Keep this section limited
+    // to environment facts.
+    const nativeEnvSection = Buffer.concat([
+      writeVarintField(1, 1),
+      writeStringField(2,
+        'Environment facts from the calling agent:\n' +
+        String(nativeEnvironment || '').trim() + '\n\n' +
+        'Use these paths as the active execution context for built-in IDE tools. ' +
+        'Any proxy placeholder workspace metadata is infrastructure only, not the user project.'),
+    ]);
+    convParts.push(writeMessageField(12, nativeEnvSection));
   } else if (!nativeMode) {
     // ── No client tools ──
     // Override system prompt sections to suppress Cascade's IDE-assistant

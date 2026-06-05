@@ -861,7 +861,7 @@ export function extractCallerEnvironment(messages) {
       // the first textual hit.
       if (re.global) {
         for (const match of content.matchAll(re)) {
-          const value = (match[1] || match[2] || '').trim();
+          const value = (match.slice(1).find(Boolean) || '').trim();
           if (!value || /[\x00-\x1f]/.test(value) || value === '<workspace>') continue;
           seen.add(key);
           out.push(fmt(value));
@@ -1690,6 +1690,7 @@ async function _handleChatCompletionsInner(body, context = {}) {
     additionalSteps: nativeAdditionalSteps,
     callerLookup: buildReverseLookup(nativeCallerTools),
     callerTools: nativeCallerTools,
+    environment: callerEnv || '',
   } : null;
 
   // Note: previous versions injected (a) a CJK language-following hint into
@@ -2219,6 +2220,7 @@ async function nonStreamResponse(client, id, created, model, modelKey, messages,
       const chunks = await client.cascadeChat(cascadeMessages, modelEnum, modelUid, {
         reuseEntry: poolCtx?.reuseEntry || null,
         toolPreamble: nativeBridgeOn ? '' : toolPreamble,
+        nativeEnvironment: nativeBridgeOn ? (nativeOpts?.environment || '') : '',
         displayModel: model,
         nativeMode: nativeBridgeOn,
         nativeAllowlist: nativeOpts?.allowlist || null,
@@ -2394,6 +2396,7 @@ async function nonStreamResponse(client, id, created, model, modelKey, messages,
                 const retryChunks = await client.cascadeChat(correctionMessages, modelEnum, modelUid, {
                   reuseEntry: null,
                   toolPreamble: nativeBridgeOn ? '' : toolPreamble,
+                  nativeEnvironment: nativeBridgeOn ? (nativeOpts?.environment || '') : '',
                   displayModel: model,
                   nativeMode: nativeBridgeOn,
                   nativeAllowlist: nativeOpts?.allowlist || null,
@@ -3158,6 +3161,7 @@ function streamResponse(id, created, model, modelKey, provider, messages, cascad
               cascadeResult = await client.cascadeChat(cascadeMessages, modelEnum, modelUid, {
                 onChunk, signal: abortController.signal, reuseEntry,
                 toolPreamble: nativeBridgeOn ? '' : toolPreamble,
+                nativeEnvironment: nativeBridgeOn ? (nativeOpts?.environment || '') : '',
                 displayModel: model,
                 nativeMode: nativeBridgeOn,
                 nativeAllowlist: nativeOpts?.allowlist || null,

@@ -7,6 +7,10 @@ const marker = `NATIVE_BRIDGE_SMOKE_${Date.now().toString(36)}`;
 const streamEnabled = process.env.NATIVE_BRIDGE_SMOKE_STREAM !== '0';
 const nonStreamEnabled = process.env.NATIVE_BRIDGE_SMOKE_NON_STREAM !== '0';
 const requestTimeoutMs = Math.max(5_000, Number(process.env.NATIVE_BRIDGE_SMOKE_TIMEOUT_MS || 120_000));
+const streamEarlyTool = process.env.NATIVE_BRIDGE_SMOKE_EARLY_TOOL !== '0';
+const includeEnv = process.env.NATIVE_BRIDGE_SMOKE_ENV !== '0';
+const smokeCwd = process.env.NATIVE_BRIDGE_SMOKE_CWD || '/tmp/windsurf-workspace';
+const smokeFile = process.env.NATIVE_BRIDGE_SMOKE_FILE || `${smokeCwd.replace(/\/+$/, '')}/README.md`;
 const requestedScenarios = String(process.env.NATIVE_BRIDGE_SMOKE_TOOLS || 'Bash')
   .split(',')
   .map(s => s.trim())
@@ -59,7 +63,7 @@ const SCENARIOS = {
   Read: {
     tools: [TOOL.Read],
     choice: 'Read',
-    prompt: `Use the Read tool exactly once for README.md with limit 20. Marker: ${marker}. Do not answer in prose.`,
+    prompt: `Use the Read tool exactly once for ${smokeFile} with limit 20. Marker: ${marker}. Do not answer in prose.`,
   },
   Bash: {
     tools: [TOOL.Bash],
@@ -69,17 +73,17 @@ const SCENARIOS = {
   Grep: {
     tools: [TOOL.Grep],
     choice: 'Grep',
-    prompt: `Use the Grep tool exactly once to search for WindsurfAPI in README.md. Marker: ${marker}. Do not answer in prose.`,
+    prompt: `Use the Grep tool exactly once with pattern "Proxy workspace placeholder", path ${smokeCwd}, glob README.md, and output_mode files_with_matches. Marker: ${marker}. Do not answer in prose.`,
   },
   Glob: {
     tools: [TOOL.Glob],
     choice: 'Glob',
-    prompt: `Use the Glob tool exactly once with pattern **/*.js and path src. Marker: ${marker}. Do not answer in prose.`,
+    prompt: `Use the Glob tool exactly once with pattern README.md and path ${smokeCwd}. Marker: ${marker}. Do not answer in prose.`,
   },
   mixed: {
     tools: [TOOL.Read, TOOL.Bash, TOOL.Grep, TOOL.Glob],
     choice: null,
-    prompt: `Choose exactly one appropriate tool from Read, Bash, Grep, Glob to inspect README.md for ${marker}. Do not answer in prose.`,
+    prompt: `Choose exactly one appropriate tool from Read, Bash, Grep, Glob to inspect ${smokeFile} for ${marker}. Do not answer in prose.`,
   },
 };
 
@@ -93,10 +97,23 @@ function expandScenarios(names) {
 }
 
 function requestBody(scenario, stream) {
+  const messages = [];
+  if (includeEnv) {
+    messages.push({
+      role: 'system',
+      content: [
+        '# Environment',
+        `- Working directory: ${smokeCwd}`,
+        '- Is directory a git repo: false',
+        '- Platform: linux',
+      ].join('\n'),
+    });
+  }
+  messages.push({ role: 'user', content: scenario.prompt });
   const body = {
     model,
     stream,
-    messages: [{ role: 'user', content: scenario.prompt }],
+    messages,
     tools: scenario.tools,
     max_tokens: 512,
   };
@@ -145,10 +162,10 @@ async function post(body, { streamEarlyTool = false, expectedTool = '' } = {}) {
       }
     }
     accumulated += decoder.decode();
-    return { status: res.status, text: accumulated, earlyTool: settledByEarlyTool };
+    return { status: res.status, text: accumulated, earlyTool: settledByEarlyTool, seenDone: /(?:^|\n)data:\s*\[DONE\]/.test(accumulated) };
   } catch (error) {
     if (error?.name === 'AbortError') {
-      if (settledByEarlyTool) return { status: res?.status || 0, text: accumulated, earlyTool: true };
+      if (settledByEarlyTool) return { status: res?.status || 0, text: accumulated, earlyTool: true, seenDone: false };
       throw new Error(`request timed out after ${requestTimeoutMs}ms`);
     }
     throw error;
@@ -206,13 +223,13 @@ async function runNonStream(name, scenario) {
 
 async function runStream(name, scenario) {
   const res = await post(requestBody(scenario, true), {
-    streamEarlyTool: true,
+    streamEarlyTool,
     expectedTool: scenario.choice || '',
   });
   if (res.status !== 200) throw new Error(`${name} stream HTTP ${res.status}: ${res.text.slice(0, 800)}`);
   assertNoNativeXml(res.text, `${name} stream`);
   const calls = collectStreamToolCalls(res.text);
-  return { toolCalls: calls.length, names: assertExpectedTool(calls, name, scenario.choice || ''), earlyTool: res.earlyTool };
+  return { toolCalls: calls.length, names: assertExpectedTool(calls, name, scenario.choice || ''), earlyTool: res.earlyTool, seenDone: !!res.seenDone };
 }
 
 const selected = expandScenarios(requestedScenarios);
@@ -250,6 +267,10 @@ console.log(JSON.stringify({
   model,
   marker,
   timeoutMs: requestTimeoutMs,
+  smokeCwd,
+  smokeFile,
+  includeEnv,
+  streamEarlyTool,
   scenarios: selected,
   results,
   failures,

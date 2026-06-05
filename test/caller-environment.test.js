@@ -53,6 +53,15 @@ describe('extractCallerEnvironment', () => {
     assert.match(result, /- Platform: linux/);
   });
 
+  it('lifts cwd from Codex XML-style <cwd> tags', () => {
+    const messages = [
+      { role: 'system', content: '<environment_context>\n<cwd>/home/dev/windsurf-api</cwd>\n</environment_context>' },
+      { role: 'user', content: 'inspect README.md' },
+    ];
+    const result = extractCallerEnvironment(messages);
+    assert.equal(result, '- Working directory: /home/dev/windsurf-api');
+  });
+
   it('lifts Windows CWD from Claude Code 2.1.120 system-reminder form', () => {
     const messages = [
       { role: 'user', content: [

@@ -525,12 +525,12 @@ export class WindsurfClient {
    * @param {object} opts - { onChunk, onEnd, onError }
    */
   async cascadeChat(messages, modelEnum, modelUid, opts = {}) {
-    let onChunk, onEnd, onError, signal, reuseEntry, toolPreamble, displayModel;
+    let onChunk, onEnd, onError, signal, reuseEntry, toolPreamble, displayModel, nativeEnvironment;
     let nativeMode, nativeAllowlist, additionalSteps;
     beginLsUse(this.port);
     try {
     ({
-      onChunk, onEnd, onError, signal, reuseEntry, toolPreamble, displayModel,
+      onChunk, onEnd, onError, signal, reuseEntry, toolPreamble, displayModel, nativeEnvironment,
       // v2.0.65 native tool bridge handles. When nativeMode=true the
       // upstream cascade_config switches the planner to DEFAULT mode + a
       // restricted CascadeToolConfig.tool_allowlist; additionalSteps[9]
@@ -717,6 +717,7 @@ export class WindsurfClient {
           toolPreamble, images,
           nativeMode: !!nativeMode,
           nativeAllowlist: nativeAllowlist || null,
+          nativeEnvironment: nativeEnvironment || '',
           additionalSteps: additionalSteps || null,
         });
         await grpcUnary(
