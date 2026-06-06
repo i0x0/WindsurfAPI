@@ -149,6 +149,21 @@ hashes, and safe classifications such as `looksPathLike` and
 `looksPromptLike`. Do not use the global raw-string trace switch for production
 traffic; it can capture prompts.
 
+Error trajectory steps also have a dedicated redacted summary. For `type=17`
+or any step carrying `error_message` field `24` / `error` field `31`, traces
+now expose `semantic.steps[].errorStep` with source field numbers, byte
+lengths, hashes, nested string paths, and classification flags such as
+`permissionDenied`, `failedPrecondition`, `modelNotAvailable`, and
+`internalError`. Raw previews stay off by default; for a gated lab run only:
+
+```text
+WINDSURFAPI_PROTO_TRACE_ERROR_STRINGS=1
+```
+
+This switch is narrower than `WINDSURFAPI_PROTO_TRACE_STRINGS=1` and still
+redacts emails and token-like values. It exists to diagnose LS executor
+preconditions without dumping complete prompts or account material.
+
 Trajectory parsing now recognizes the web step oneofs observed so far:
 
 - `read_url_content` = field `40`, body `{ url=1, summary=5 }`
@@ -196,6 +211,27 @@ Current conclusion: WebSearch/WebFetch must stay on prompt emulation or a
 separate first-party API bridge until we find the LS-side web executor
 precondition. The confirmed protobuf fields are useful for tracing and future
 matrix work, but not sufficient for production native bridge rollout.
+
+The v2.0.132 VPS pass rechecked the same area after the Read wrapper fixes:
+
+- Direct `GetWebSearchResults` succeeded for all ten loaded active/pro
+  accounts, returning two results per account for the control query.
+- A gated LS-native smoke enabled only `WebSearch,WebFetch` for
+  `claude-sonnet-4.6` with API-key gating and raw web subconfigs.
+- `SendUserCascadeMessage` did send web native configs:
+  `search_web` appeared as allowlist `["search_web"]` with subconfig field
+  `13`; `read_url_content` appeared as allowlist `["read_url_content"]` with
+  subconfig field `37`.
+- `GetCascadeTrajectorySteps` still emitted no `field=42 search_web` and no
+  `field=40 read_url_content` native oneof. The repeated shape was
+  `type=14`, `type=34`, then `type=17` error with field `24`.
+- The OpenAI-compatible smoke response surfaced HTTP `403` with
+  `type="model_not_available"` for both web scenarios.
+
+Updated conclusion: the proxy is not failing to send the WebFetch config; LS
+receives the `read_url_content` config but still fails before emitting the web
+oneof. The missing piece remains an LS-side web executor precondition or a
+descriptor-backed direct WebFetch/read-url API.
 
 ## Direct Web Search API
 

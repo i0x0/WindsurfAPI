@@ -405,4 +405,78 @@ describe('proto trace', () => {
     assert.match(promptChild.preview, /<redacted-secret>/);
     assert.doesNotMatch(promptChild.preview, /abcdefghijklmnopqrstuvwxyz1234567890abcdef/);
   });
+
+  it('classifies error trajectory steps without raw strings by default', () => {
+    process.env.WINDSURFAPI_PROTO_TRACE = '1';
+    const details = Buffer.concat([
+      writeStringField(1, 'permission_denied: LS web executor failed precondition for user@example.com'),
+      writeStringField(2, 'an internal error occurred'),
+    ]);
+    const errorMessage = Buffer.concat([
+      writeMessageField(3, details),
+      writeVarintField(5, 1),
+    ]);
+    const step = Buffer.concat([
+      writeVarintField(1, 17),
+      writeVarintField(4, 3),
+      writeMessageField(24, errorMessage),
+    ]);
+    traceGrpcPayload({
+      port: 42100,
+      path: '/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps',
+      direction: 'response',
+      body: writeMessageField(1, step),
+      transport: 'grpc',
+      framed: false,
+    });
+
+    const file = join(dir, `ls-proto-${process.pid}-GetCascadeTrajectorySteps.jsonl`);
+    const line = readFileSync(file, 'utf8').trim();
+    const rec = JSON.parse(line);
+    const errorStep = rec.semantic.steps[0].errorStep;
+    assert.deepEqual(errorStep.classifications, {
+      permissionDenied: true,
+      failedPrecondition: true,
+      internalError: true,
+    });
+    assert.equal(errorStep.sources[0].field, 24);
+    assert.deepEqual(errorStep.sources[0].fieldNumbers, [3, 5]);
+    assert.equal(errorStep.sources[0].strings.length, 2);
+    assert.ok(errorStep.sources[0].strings.every(s => s.sha256 && s.bytes > 0));
+    assert.ok(errorStep.sources[0].strings.every(s => s.preview === undefined));
+    assert.doesNotMatch(line, /user@example\.com/);
+    assert.doesNotMatch(line, /permission_denied: LS web executor/);
+  });
+
+  it('can include redacted error previews behind a dedicated switch', () => {
+    process.env.WINDSURFAPI_PROTO_TRACE = '1';
+    process.env.WINDSURFAPI_PROTO_TRACE_ERROR_STRINGS = '1';
+    const errorMessage = writeStringField(
+      3,
+      'model_not_available for tester@example.com api_key=abcdefghijklmnopqrstuvwxyz1234567890abcdef'
+    );
+    const step = Buffer.concat([
+      writeVarintField(1, 17),
+      writeVarintField(4, 3),
+      writeMessageField(24, errorMessage),
+    ]);
+    traceGrpcPayload({
+      port: 42100,
+      path: '/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps',
+      direction: 'response',
+      body: writeMessageField(1, step),
+      transport: 'grpc',
+      framed: false,
+    });
+
+    const file = join(dir, `ls-proto-${process.pid}-GetCascadeTrajectorySteps.jsonl`);
+    const rec = JSON.parse(readFileSync(file, 'utf8').trim());
+    const stringSummary = rec.semantic.steps[0].errorStep.sources[0].strings[0];
+    assert.equal(stringSummary.classifications.modelNotAvailable, true);
+    assert.match(stringSummary.preview, /model_not_available/);
+    assert.match(stringSummary.preview, /<redacted-email>/);
+    assert.match(stringSummary.preview, /<redacted-secret>/);
+    assert.doesNotMatch(stringSummary.preview, /tester@example\.com/);
+    assert.doesNotMatch(stringSummary.preview, /abcdefghijklmnopqrstuvwxyz1234567890abcdef/);
+  });
 });

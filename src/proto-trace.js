@@ -50,6 +50,7 @@ function mostlyText(buf) {
 function redactPreview(s) {
   return String(s)
     .replace(/\b(?:devin-session-token|sessionToken|api[_-]?key|firebase_id_token|idToken|refreshToken)\b\s*[:=]\s*["']?[^"',\s)]+/gi, '<redacted-secret>')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '<redacted-email>')
     .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '<redacted-token>')
     .slice(0, 240);
 }
@@ -423,6 +424,115 @@ function summarizeReadWrapperField19(wrapperBuf) {
   };
 }
 
+function classifyErrorText(text) {
+  const value = String(text || '').toLowerCase();
+  return {
+    permissionDenied: /permission[_\s-]?denied|forbidden|\b403\b|not authorized/.test(value),
+    failedPrecondition: /failed[_\s-]?precondition|precondition/.test(value),
+    modelNotAvailable: /model[_\s-]?not[_\s-]?available|model not available/.test(value),
+    internalError: /internal[_\s-]?error|an internal error occurred/.test(value),
+    unauthenticated: /unauthenticated|\b401\b|invalid api key|invalid token/.test(value),
+    rateLimited: /rate[_\s-]?limit|too many requests|\b429\b/.test(value),
+    quotaOrEntitlement: /quota|credit|billing|subscription|entitlement/.test(value),
+  };
+}
+
+function compactTrueFlags(flags) {
+  return Object.fromEntries(Object.entries(flags || {}).filter(([, v]) => !!v));
+}
+
+function mergeErrorClassifications(target, source) {
+  for (const [key, value] of Object.entries(source || {})) {
+    if (value) target[key] = true;
+  }
+  return target;
+}
+
+function summarizeErrorString(path, buf) {
+  const text = buf.toString('utf8');
+  const classifications = compactTrueFlags(classifyErrorText(text));
+  const out = {
+    path,
+    bytes: buf.length,
+    sha256: shortHash(buf),
+    classifications,
+  };
+  if (process.env.WINDSURFAPI_PROTO_TRACE_ERROR_STRINGS === '1') {
+    out.preview = redactPreview(text);
+  }
+  return out;
+}
+
+function collectErrorStrings(buf, path, out, depth = 0) {
+  if (!Buffer.isBuffer(buf) || out.length >= positiveIntEnv('WINDSURFAPI_PROTO_TRACE_ERROR_STRING_LIMIT', 8)) return;
+  const maxDepth = positiveIntEnv('WINDSURFAPI_PROTO_TRACE_ERROR_DEPTH', 4);
+  if (depth < maxDepth && looksLikeMessage(buf)) {
+    const before = out.length;
+    try {
+      const fields = parseFields(buf);
+      for (const f of fields) {
+        if (out.length >= positiveIntEnv('WINDSURFAPI_PROTO_TRACE_ERROR_STRING_LIMIT', 8)) return;
+        if (f.wireType !== 2 || !Buffer.isBuffer(f.value)) continue;
+        collectErrorStrings(f.value, `${path}.${f.field}`, out, depth + 1);
+      }
+      if (out.length > before) return;
+    } catch {}
+  }
+  if (mostlyText(buf)) {
+    out.push(summarizeErrorString(path, buf));
+  }
+}
+
+function summarizeErrorSource(field, payload) {
+  const source = {
+    field,
+    bytes: payload.length,
+    sha256: shortHash(payload),
+    fieldNumbers: [],
+    varints: [],
+    strings: [],
+    classifications: {},
+  };
+  try {
+    const fields = parseFields(payload);
+    source.fieldNumbers = fields.map(f => f.field);
+    source.varints = fields
+      .filter(f => f.wireType === 0)
+      .slice(0, 8)
+      .map(f => ({
+        field: f.field,
+        value: typeof f.value === 'bigint' ? f.value.toString() : f.value,
+      }));
+    collectErrorStrings(payload, String(field), source.strings);
+    for (const s of source.strings) {
+      mergeErrorClassifications(source.classifications, s.classifications);
+    }
+  } catch (err) {
+    source.parseError = err.message;
+  }
+  source.classifications = compactTrueFlags(source.classifications);
+  return source;
+}
+
+function summarizeErrorStep(fields) {
+  const sources = [];
+  for (const fieldNum of [24, 31]) {
+    for (const f of getAllFields(fields, fieldNum)) {
+      if (f.wireType !== 2 || !Buffer.isBuffer(f.value)) continue;
+      sources.push(summarizeErrorSource(fieldNum, f.value));
+    }
+  }
+  if (!sources.length) return null;
+  const classifications = {};
+  for (const source of sources) {
+    mergeErrorClassifications(classifications, source.classifications);
+  }
+  return {
+    sources,
+    classifications: compactTrueFlags(classifications),
+  };
+}
+
 function summarizeTrajectoryStep(stepBuf, index) {
   const fields = parseFields(stepBuf);
   const oneofFields = [];
@@ -445,6 +555,7 @@ function summarizeTrajectoryStep(stepBuf, index) {
     }));
   const type = numberField(fields, 1);
   const wrapper19 = type === 14 ? getField(fields, 19, 2) : null;
+  const errorStep = summarizeErrorStep(fields);
   return {
     index,
     type,
@@ -453,6 +564,7 @@ function summarizeTrajectoryStep(stepBuf, index) {
     nativeOneofs: oneofFields,
     messageFields: interestingFields,
     ...(wrapper19 ? { readWrapperField19: summarizeReadWrapperField19(wrapper19.value) } : {}),
+    ...(errorStep ? { errorStep } : {}),
   };
 }
 
