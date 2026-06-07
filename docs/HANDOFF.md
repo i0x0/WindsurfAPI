@@ -12,15 +12,16 @@ into this file.
 - Repository: `D:\Project\WindsurfAPI`
 - Local/remote branch state at handoff: `master` is clean and aligned with
   `origin/master`.
-- Last verified repository baseline before this handoff update: `c247c33`
-  (`docs: record issue audit roadmap`). After pulling, use
-  `git log -1 --oneline` for the newest docs-only handoff commit.
-- Latest release tag: `v2.0.142` at `72e1b9c`
-  (`fix: clean partial stream error tails`).
+- Last verified repository baseline before this handoff update: `69e91a3`
+  (`chore(release): v2.0.143 diagnostics and canary hardening`). After
+  pulling, use `git log -1 --oneline` for the newest commit.
+- Latest release tag: `v2.0.143` at `69e91a3`
+  (`chore(release): v2.0.143 diagnostics and canary hardening`).
 - GitHub open PRs: none.
-- GitHub CI/Pages for `c247c33`: success.
+- GitHub CI/Pages for `69e91a3`: pending verification.
 - VPS runtime: WindsurfAPI is healthy on release `v2.0.142`, commit
-  `72e1b9cf079e`, through the compose entry on `:3003`.
+  `72e1b9cf079e`, through the compose entry on `:3003`. v2.0.143 is
+  tagged and pushed but not yet deployed to VPS.
 - VPS public port 80 is not a WindsurfAPI health signal in the current setup; it
   may be served by another Apache/PHP stack and can show an HTML 404 page.
 
@@ -124,6 +125,11 @@ For docs-only changes:
   reached the client, the proxy closes with normal finish and `[DONE]` instead
   of appending an error JSON SSE frame.
 - v2.0.142 does not eliminate upstream provider deadlines.
+- v2.0.143 added `BridgeResult[...]` per-request diagnostics (stream +
+  non-stream), WebFetch canary hard verdict in smoke, SWE-1.6 negative
+  smoke (tools/media boundary), and /health bounded limits exposure.
+- v2.0.143 wrapped HandleCascadeUserInteraction in try/catch with hash-based
+  safe logging; approval failures no longer terminate polling.
 - WebFetch VPS canary after v2.0.141 did not reach protocol execution because
   LS preflight refused with `ls_capacity:memory_guard`; that is not protocol
   evidence.
